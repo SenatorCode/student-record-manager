@@ -1,38 +1,57 @@
-## Student Information:
-Name: Ibikunle Fawas Olamide
-Matric Number: 250368
-Department: Computer Science
-Level: 200
+# Student Record Manager
 
+A Java application that demonstrates core Object-Oriented Programming (OOP) concepts by managing student profiles, course registrations, and CGPA calculations.
 
-## Design Principles Demonstrated
+---
+
+## Student Information
+
+| Field | Details |
+| :--- | :--- |
+| **Name** | Ibikunle Fawas Olamide |
+| **Matric Number** | 250368 |
+| **Department** | Computer Science |
+| **Level** | 200 |
+
+---
+
+##  Design Principles Demonstrated
 
 ### Inheritance
-`Student extends Person`. `Person` holds what's common to any person (a `name`);
-`Student` adds what's specific to being a student (`studentId`, `department`,
-`courses`). The `Student` constructor calls `super(name)` to initialize the
-inherited `name` field, since `Person`'s fields are private and can only be
-set through `Person`'s own constructor.
+* **Implementation:** `Student` extends `Person`.
+* **Details:** The `Person` class encapsulates attributes common to any individual (such as `name`), while `Student` introduces specialized fields (`studentId`, `department`, `courses`). The `Student` constructor explicitly calls `super(name)` to initialize inherited fields, maintaining strict access boundaries since `Person` attributes are private.
 
 ### Encapsulation
-Every field in `Person`, `Student`, and `Course` is `private`, accessed only
-through public getters/setters. This means validation rules can be added to a
-setter later without touching any other class, and no external code can put an
-object into an invalid state by reaching into its fields directly.
+* **Implementation:** Strict data hiding across all entities.
+* **Details:** Every field in `Person`, `Student`, and `Course` is marked `private`. Data access and modifications are strictly brokered through public getters and setters. This architecture allows future validation rules to be injected directly into setters without mutating external code dependencies, preventing the application state from becoming corrupted.
 
-### ArrayList
-`Student` stores its registered courses in an `ArrayList<Course>` rather than
-a fixed-size array, since the number of courses a student registers is not
-known in advance. `registerCourse()` wraps `ArrayList.add()` so all additions
-go through one controlled entry point.
+### Dynamic Arrays (ArrayList)
+* **Implementation:** Flexible course management via `ArrayList<Course>`.
+* **Details:** Because the number of courses a student will register for is dynamic and unknown at compile time, an `ArrayList` is used instead of a fixed-size array. The `registerCourse()` method acts as a controlled wrapper around `ArrayList.add()`, ensuring all additions route through a single validation point.
 
 ### Exception Handling
-- `NumberFormatException` is caught specifically when parsing the credit unit
-  field, so a non-numeric entry produces a clear message instead of a crash.
-- `IllegalStateException` is thrown by `Student.calculateCGPA()` when fewer
-  than 5 courses are registered, and caught separately wherever CGPA is
-  calculated (the CGPA button and the profile display), each presenting the
-  failure appropriately for its context.
-- Both are caught by their specific type, not a generic `catch (Exception e)`,
-  so only the failures the program actually anticipates are handled, any
-  other bug still surfaces normally.
+The application avoids generic `catch (Exception e)` blocks, opting instead to catch explicit, anticipated exceptions to ensure runtime robustness without masking unrelated bugs:
+* **`NumberFormatException`:** Caught specifically during credit unit parsing. This prevents system crashes if a user inputs non-numeric characters, serving a clean validation message instead.
+* **`IllegalStateException`:** Thrown by `Student.calculateCGPA()` if a student attempts to compute their grade point average with fewer than 5 registered courses. This exception is caught independently by UI controllers (the CGPA button and the profile display) to handle the lifecycle event gracefully according to context.
+
+---
+
+## How to Run the Program
+
+Follow these steps to compile and run the application locally from your terminal:
+
+1. Navigate into the project root directory:
+   ```bash
+   cd student-record-manager
+   ```
+
+2. Move into the source files directory:
+   ```bash
+   cd src
+   ```
+
+3. Compile all Java source files and execute the main class:
+   ```bash
+   javac *.java && java StudentRecordManager
+   ```
+
