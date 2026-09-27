@@ -1,4 +1,5 @@
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.ArrayList;
 
@@ -6,18 +7,22 @@ public class StudentRecordManager extends JFrame {
 
     private ArrayList<Student> students;
 
-    // Input fields — declared as fields, not local variables, because
-    // button-click methods (added later) will need to read from them
+    // The single source of truth for "who are we currently looking at."
+    // null means "no one selected yet / creating a new student."
+    private Student currentStudent;
+
+    private JComboBox<Student> studentSelector;
+
     private JTextField nameField;
     private JTextField studentIdField;
     private JTextField departmentField;
     private JTextField courseCodeField;
     private JTextField courseTitleField;
     private JTextField creditUnitField;
-
-    // Dropdown instead of a text field: makes an invalid grade (e.g. "Z")
-    // structurally impossible to enter, instead of relying on catching it later.
     private JComboBox<String> gradeComboBox;
+
+    private DefaultTableModel courseTableModel;
+    private JTable courseTable;
 
     private JTextArea displayArea;
 
@@ -25,57 +30,105 @@ public class StudentRecordManager extends JFrame {
         students = initializeSampleStudents();
 
         setTitle("University of Ibadan - Student Record Manager");
-        setSize(700, 600);
+        setSize(950, 650);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
         add(buildInputPanel(), BorderLayout.NORTH);
-        add(buildDisplayPanel(), BorderLayout.CENTER);
+        add(buildCenterPanel(), BorderLayout.CENTER);
         add(buildButtonPanel(), BorderLayout.SOUTH);
 
+        refreshStudentSelector(); // populates the dropdown with the seeded students
         setVisible(true);
     }
 
     private JPanel buildInputPanel() {
-        JPanel panel = new JPanel(new GridLayout(7, 2, 5, 5));
+        JPanel wrapper = new JPanel(new BorderLayout(5, 5));
 
-        panel.add(new JLabel("Student Name:"));
+        JPanel selectorPanel = new JPanel(new BorderLayout(5, 5));
+        selectorPanel.add(new JLabel("Select Student:"), BorderLayout.WEST);
+
+        studentSelector = new JComboBox<>();
+        // Custom renderer only changes how items are DISPLAYED, not what's
+        // stored — the null item still becomes null when selected.
+        studentSelector.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+                String text = (value == null) ? "-- New Student --" : value.toString();
+                return super.getListCellRendererComponent(list, text, index, isSelected, cellHasFocus);
+            }
+        });
+        studentSelector.addActionListener(e -> onStudentSelectionChanged());
+        selectorPanel.add(studentSelector, BorderLayout.CENTER);
+        wrapper.add(selectorPanel, BorderLayout.NORTH);
+
+        JPanel fieldsPanel = new JPanel(new GridLayout(7, 2, 5, 5));
+
+        fieldsPanel.add(new JLabel("Student Name:"));
         nameField = new JTextField();
-        panel.add(nameField);
+        fieldsPanel.add(nameField);
 
-        panel.add(new JLabel("Student ID:"));
+        fieldsPanel.add(new JLabel("Student ID:"));
         studentIdField = new JTextField();
-        panel.add(studentIdField);
+        fieldsPanel.add(studentIdField);
 
-        panel.add(new JLabel("Department:"));
+        fieldsPanel.add(new JLabel("Department:"));
         departmentField = new JTextField();
-        panel.add(departmentField);
+        fieldsPanel.add(departmentField);
 
-        panel.add(new JLabel("Course Code:"));
+        fieldsPanel.add(new JLabel("Course Code:"));
         courseCodeField = new JTextField();
-        panel.add(courseCodeField);
+        fieldsPanel.add(courseCodeField);
 
-        panel.add(new JLabel("Course Title:"));
+        fieldsPanel.add(new JLabel("Course Title:"));
         courseTitleField = new JTextField();
-        panel.add(courseTitleField);
+        fieldsPanel.add(courseTitleField);
 
-        panel.add(new JLabel("Credit Unit:"));
+        fieldsPanel.add(new JLabel("Credit Unit:"));
         creditUnitField = new JTextField();
-        panel.add(creditUnitField);
+        fieldsPanel.add(creditUnitField);
 
-        panel.add(new JLabel("Grade:"));
+        fieldsPanel.add(new JLabel("Grade:"));
         gradeComboBox = new JComboBox<>(new String[]{"A", "B", "C", "D", "E", "F"});
-        panel.add(gradeComboBox);
+        fieldsPanel.add(gradeComboBox);
 
-        return panel;
+        wrapper.add(fieldsPanel, BorderLayout.CENTER);
+        return wrapper;
     }
 
-    private JScrollPane buildDisplayPanel() {
+    private JSplitPane buildCenterPanel() {
+        JPanel tablePanel = new JPanel(new BorderLayout(5, 5));
+        tablePanel.add(new JLabel("Registered Courses (click a row to edit):"), BorderLayout.NORTH);
+
+        String[] columns = {"Course Code", "Course Title", "Credit Unit", "Grade"};
+        courseTableModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                // Read-only: edits must go through the form + Edit Course
+                // button, where validation actually happens.
+                return false;
+            }
+        };
+        courseTable = new JTable(courseTableModel);
+        courseTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                onCourseRowSelected();
+            }
+        });
+        tablePanel.add(new JScrollPane(courseTable), BorderLayout.CENTER);
+
+        JPanel displayPanel = new JPanel(new BorderLayout(5, 5));
+        displayPanel.add(new JLabel("Student Profile:"), BorderLayout.NORTH);
         displayArea = new JTextArea();
         displayArea.setEditable(false);
         displayArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        return new JScrollPane(displayArea);
+        displayPanel.add(new JScrollPane(displayArea), BorderLayout.CENTER);
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tablePanel, displayPanel);
+        splitPane.setResizeWeight(0.4); // table gets ~40% of the width, profile the rest
+        return splitPane;
     }
 
     private JPanel buildButtonPanel() {
@@ -84,6 +137,10 @@ public class StudentRecordManager extends JFrame {
         JButton registerButton = new JButton("Register Course");
         registerButton.addActionListener(e -> handleRegisterCourse());
         panel.add(registerButton);
+
+        JButton editButton = new JButton("Edit Course");
+        editButton.addActionListener(e -> handleEditCourse());
+        panel.add(editButton);
 
         JButton cgpaButton = new JButton("Calculate CGPA");
         cgpaButton.addActionListener(e -> handleCalculateCGPA());
@@ -101,18 +158,13 @@ public class StudentRecordManager extends JFrame {
         exitButton.addActionListener(e -> handleExit());
         panel.add(exitButton);
 
-        JButton editButton = new JButton("Edit Course");
-        editButton.addActionListener(e -> handleEditCourse());
-        panel.add(editButton);
-
         return panel;
     }
 
     private static ArrayList<Student> initializeSampleStudents() {
         ArrayList<Student> students = new ArrayList<>();
 
-        // Student 1: Computer Science
-        Student student1 = new Student("John Ade", "250444", "Computer Science");
+        Student student1 = new Student("John Ade", "UI/CSC/2026/001", "Computer Science");
         student1.registerCourse(new Course("CSC201", "Data Structures", 3, "A"));
         student1.registerCourse(new Course("CSC203", "Computer Architecture", 3, "B"));
         student1.registerCourse(new Course("MTH201", "Mathematics II", 3, "A"));
@@ -120,8 +172,7 @@ public class StudentRecordManager extends JFrame {
         student1.registerCourse(new Course("STA201", "Statistics", 2, "C"));
         students.add(student1);
 
-        // Student 2: Mathematics
-        Student student2 = new Student("Amaka Obi", "250445", "Mathematics");
+        Student student2 = new Student("Amaka Obi", "UI/MTH/2026/002", "Mathematics");
         student2.registerCourse(new Course("MTH301", "Real Analysis", 3, "A"));
         student2.registerCourse(new Course("MTH303", "Linear Algebra", 3, "A"));
         student2.registerCourse(new Course("STA301", "Probability Theory", 3, "B"));
@@ -129,8 +180,7 @@ public class StudentRecordManager extends JFrame {
         student2.registerCourse(new Course("CSC301", "Numerical Methods", 2, "B"));
         students.add(student2);
 
-        // Student 3: Physics
-        Student student3 = new Student("Tunde Bello", "250446", "Physics");
+        Student student3 = new Student("Tunde Bello", "UI/PHY/2026/003", "Physics");
         student3.registerCourse(new Course("PHY201", "Classical Mechanics", 3, "B"));
         student3.registerCourse(new Course("PHY203", "Thermodynamics", 3, "A"));
         student3.registerCourse(new Course("MTH201", "Mathematics II", 3, "B"));
@@ -145,9 +195,6 @@ public class StudentRecordManager extends JFrame {
         SwingUtilities.invokeLater(() -> new StudentRecordManager());
     }
 
-    // Returns null rather than throwing when no match is found — "not found"
-    // is a normal, expected outcome here (it may just mean this is a new
-    // student), not an error condition. The caller decides what it means.
     private Student findStudentById(String id) {
         for (Student s : students) {
             if (s.getStudentId().equalsIgnoreCase(id)) {
@@ -157,18 +204,97 @@ public class StudentRecordManager extends JFrame {
         return null;
     }
 
+    // Rebuilds the dropdown's contents from the students list. Called on
+    // startup and any time a new student is added, so the dropdown always
+    // reflects what's actually in `students`.
+    private void refreshStudentSelector() {
+        studentSelector.removeAllItems();
+        studentSelector.addItem(null); // "-- New Student --"
+        for (Student s : students) {
+            studentSelector.addItem(s);
+        }
+    }
+
+    // Fires whenever the dropdown selection changes — this is the single
+    // place responsible for keeping currentStudent, the identity fields,
+    // and the course table all in sync with each other.
+    private void onStudentSelectionChanged() {
+        currentStudent = (Student) studentSelector.getSelectedItem();
+        boolean isNewStudent = (currentStudent == null);
+
+        nameField.setEditable(isNewStudent);
+        studentIdField.setEditable(isNewStudent);
+        departmentField.setEditable(isNewStudent);
+
+        if (isNewStudent) {
+            nameField.setText("");
+            studentIdField.setText("");
+            departmentField.setText("");
+        } else {
+            nameField.setText(currentStudent.getName());
+            studentIdField.setText(currentStudent.getStudentId());
+            departmentField.setText(currentStudent.getDepartment());
+        }
+
+        refreshCourseTable();
+        clearCourseEntryFields();
+    }
+
+    private void refreshCourseTable() {
+        courseTableModel.setRowCount(0); // clear existing rows
+        if (currentStudent == null) return;
+
+        for (Course c : currentStudent.getCourses()) {
+            courseTableModel.addRow(new Object[]{
+                c.getCourseCode(), c.getCourseTitle(), c.getCreditUnit(), c.getGrade()
+            });
+        }
+    }
+
+    // Pre-fills the course entry fields from whichever row was clicked, so
+    // "Edit Course" has something to work with without retyping the code.
+    private void onCourseRowSelected() {
+        int row = courseTable.getSelectedRow();
+        if (row == -1 || currentStudent == null) return;
+
+        String code = (String) courseTableModel.getValueAt(row, 0);
+        Course match = null;
+        for (Course c : currentStudent.getCourses()) {
+            if (c.getCourseCode().equalsIgnoreCase(code)) {
+                match = c;
+                break;
+            }
+        }
+        if (match == null) return;
+
+        courseCodeField.setText(match.getCourseCode());
+        courseTitleField.setText(match.getCourseTitle());
+        creditUnitField.setText(String.valueOf(match.getCreditUnit()));
+        gradeComboBox.setSelectedItem(match.getGrade());
+    }
+
+    private void clearCourseEntryFields() {
+        courseCodeField.setText("");
+        courseTitleField.setText("");
+        creditUnitField.setText("");
+        gradeComboBox.setSelectedIndex(0);
+    }
+
     private void handleRegisterCourse() {
-        String studentId = studentIdField.getText().trim();
-        String name = nameField.getText().trim();
-        String department = departmentField.getText().trim();
         String courseCode = courseCodeField.getText().trim();
         String courseTitle = courseTitleField.getText().trim();
         String creditUnitText = creditUnitField.getText().trim();
         String grade = (String) gradeComboBox.getSelectedItem();
 
-        if (studentId.isEmpty() || name.isEmpty() || department.isEmpty()
-            || courseCode.isEmpty() || courseTitle.isEmpty() || creditUnitText.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "All fields must be filled in.",
+        if (currentStudent == null) {
+            currentStudent = createNewStudentFromForm();
+            if (currentStudent == null) {
+                return; // validation failed; createNewStudentFromForm already showed a dialog
+            }
+        }
+
+        if (courseCode.isEmpty() || courseTitle.isEmpty() || creditUnitText.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "All course fields must be filled in.",
                 "Missing Information", JOptionPane.WARNING_MESSAGE);
             return;
         }
@@ -176,9 +302,6 @@ public class StudentRecordManager extends JFrame {
         int creditUnit;
         try {
             creditUnit = Integer.parseInt(creditUnitText);
-            // Integer.parseInt succeeds for "0" and negative numbers — it only
-            // fails on non-numeric text. "Positive" is a separate business
-            // rule, so it needs its own check here.
             if (creditUnit <= 0) {
                 JOptionPane.showMessageDialog(this, "Credit unit must be a positive number.",
                     "Invalid Input", JOptionPane.WARNING_MESSAGE);
@@ -190,75 +313,121 @@ public class StudentRecordManager extends JFrame {
             return;
         }
 
-        // Existing student ID -> add to their record. Unknown ID -> treat the
-        // typed name/department as a brand-new student being created on the spot.
-        Student student = findStudentById(studentId);
-        if (student == null) {
-            student = new Student(name, studentId, department);
-            students.add(student);
-        }
-
         Course course = new Course(courseCode, courseTitle, creditUnit, grade);
-
         try {
-            student.registerCourse(course);
+            currentStudent.registerCourse(course);
         } catch (IllegalArgumentException ex) {
             JOptionPane.showMessageDialog(this, ex.getMessage(),
                 "Duplicate Course", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
+        refreshCourseTable();
+        clearCourseEntryFields();
         JOptionPane.showMessageDialog(this,
-            courseCode + " registered for " + student.getName() + ".",
+            courseCode + " registered for " + currentStudent.getName() + ".",
+            "Success", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    // Builds a new Student from the identity fields and adds them to both
+    // `students` and the dropdown. Returns null (having already shown a
+    // dialog) if the fields are invalid — same "null means don't proceed"
+    // convention as findStudentById.
+    private Student createNewStudentFromForm() {
+        String name = nameField.getText().trim();
+        String studentId = studentIdField.getText().trim();
+        String department = departmentField.getText().trim();
+
+        if (name.isEmpty() || studentId.isEmpty() || department.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter the new student's name, ID, and department first.",
+                "Missing Information", JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
+        if (findStudentById(studentId) != null) {
+            JOptionPane.showMessageDialog(this,
+                "A student with this ID already exists. Select them from the dropdown instead.",
+                "Duplicate Student", JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
+
+        Student newStudent = new Student(name, studentId, department);
+        students.add(newStudent);
+        refreshStudentSelector();
+        studentSelector.setSelectedItem(newStudent);
+        return newStudent;
+    }
+
+    private void handleEditCourse() {
+        if (currentStudent == null) {
+            JOptionPane.showMessageDialog(this, "Select a student first.",
+                "No Student Selected", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String courseCode = courseCodeField.getText().trim();
+        String newTitle = courseTitleField.getText().trim();
+        String creditUnitText = creditUnitField.getText().trim();
+        String newGrade = (String) gradeComboBox.getSelectedItem();
+
+        if (courseCode.isEmpty() || newTitle.isEmpty() || creditUnitText.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Click a course row, or fill in all fields, to edit a course.",
+                "Missing Information", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        int newCreditUnit;
+        try {
+            newCreditUnit = Integer.parseInt(creditUnitText);
+            if (newCreditUnit <= 0) {
+                JOptionPane.showMessageDialog(this, "Credit unit must be a positive number.",
+                    "Invalid Input", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, "Credit unit must be a whole number.",
+                "Invalid Input", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        boolean updated = currentStudent.editCourse(courseCode, newTitle, newCreditUnit, newGrade);
+        if (!updated) {
+            JOptionPane.showMessageDialog(this, courseCode + " is not registered for this student.",
+                "Course Not Found", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        refreshCourseTable();
+        clearCourseEntryFields();
+        JOptionPane.showMessageDialog(this,
+            courseCode + " updated for " + currentStudent.getName() + ".",
             "Success", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void handleCalculateCGPA() {
-        String studentId = studentIdField.getText().trim();
-
-        if (studentId.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Enter a Student ID to calculate CGPA.",
-                "Missing Information", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        Student student = findStudentById(studentId);
-        if (student == null) {
-            JOptionPane.showMessageDialog(this, "No student found with ID: " + studentId,
-                "Student Not Found", JOptionPane.ERROR_MESSAGE);
+        if (currentStudent == null) {
+            JOptionPane.showMessageDialog(this, "Select a student first.",
+                "No Student Selected", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         try {
-            double cgpa = student.calculateCGPA();
+            double cgpa = currentStudent.calculateCGPA();
             JOptionPane.showMessageDialog(this,
-                String.format("%s's CGPA is %.2f", student.getName(), cgpa),
+                String.format("%s's CGPA is %.2f", currentStudent.getName(), cgpa),
                 "CGPA Calculated", JOptionPane.INFORMATION_MESSAGE);
         } catch (IllegalStateException ex) {
-            // Thrown by Student.calculateCGPA() when fewer than 5 courses are
-            // registered. The model owns the rule; this just presents the failure.
             JOptionPane.showMessageDialog(this, ex.getMessage(),
-            "Cannot Calculate CGPA", JOptionPane.WARNING_MESSAGE);
+                "Cannot Calculate CGPA", JOptionPane.WARNING_MESSAGE);
         }
     }
 
     private void handleDisplayProfile() {
-        String studentId = studentIdField.getText().trim();
-
-        if (studentId.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Enter a Student ID to display a profile.",
-                "Missing Information", JOptionPane.WARNING_MESSAGE);
+        if (currentStudent == null) {
+            JOptionPane.showMessageDialog(this, "Select a student first.",
+                "No Student Selected", JOptionPane.WARNING_MESSAGE);
             return;
         }
-
-        Student student = findStudentById(studentId);
-        if (student == null) {
-            JOptionPane.showMessageDialog(this, "No student found with ID: " + studentId,
-                "Student Not Found", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        displayArea.setText(buildProfileText(student));
+        displayArea.setText(buildProfileText(currentStudent));
     }
 
     private String buildProfileText(Student student) {
@@ -273,9 +442,6 @@ public class StudentRecordManager extends JFrame {
         sb.append(String.format("Department : %s%n", student.getDepartment()));
         sb.append(String.format("Courses Registered: %d%n", student.getCourseCount()));
         sb.append("---------------------------------------------------------------\n");
-
-        // Header row uses the exact same format string as the data rows below,
-        // so columns can't drift out of alignment between the two.
         sb.append(String.format("%-12s %-25s %-5s %-5s%n", "Course Code", "Course Title", "CU", "Grade"));
         sb.append("---------------------------------------------------------------\n");
 
@@ -296,25 +462,18 @@ public class StudentRecordManager extends JFrame {
             double cgpa = student.calculateCGPA();
             sb.append(String.format("CGPA : %.2f%n", cgpa));
         } catch (IllegalStateException ex) {
-            // Same exception as the CGPA button.
-            // But here it's shown inline in the profile text rather than as a dialog. 
-            // The profile should still render, just showing "not calculated yet" as part of it.
             sb.append(ex.getMessage()).append("\n");
         }
 
         sb.append("===============================================\n");
-
         return sb.toString();
     }
 
     private void handleClearForm() {
-        nameField.setText("");
-        studentIdField.setText("");
-        departmentField.setText("");
-        courseCodeField.setText("");
-        courseTitleField.setText("");
-        creditUnitField.setText("");
-        gradeComboBox.setSelectedIndex(0); // No setText() on JComboBox — reset to first option instead
+        // Resetting the selector to "-- New Student --" (index 0) triggers
+        // onStudentSelectionChanged(), which clears every field and the
+        // table for us — no need to duplicate that logic here.
+        studentSelector.setSelectedIndex(0);
     }
 
     private void handleExit() {
@@ -330,51 +489,4 @@ public class StudentRecordManager extends JFrame {
             System.exit(0);
         }
     }
-
-    private void handleEditCourse() {
-    String studentId = studentIdField.getText().trim();
-    String courseCode = courseCodeField.getText().trim();
-    String newTitle = courseTitleField.getText().trim();
-    String creditUnitText = creditUnitField.getText().trim();
-    String newGrade = (String) gradeComboBox.getSelectedItem();
-
-    if (studentId.isEmpty() || courseCode.isEmpty() || newTitle.isEmpty() || creditUnitText.isEmpty()) {
-        JOptionPane.showMessageDialog(this, "All fields must be filled in to edit a course.",
-            "Missing Information", JOptionPane.WARNING_MESSAGE);
-        return;
-    }
-
-    int newCreditUnit;
-    try {
-        newCreditUnit = Integer.parseInt(creditUnitText);
-        if (newCreditUnit <= 0) {
-            JOptionPane.showMessageDialog(this, "Credit unit must be a positive number.",
-                "Invalid Input", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-    } catch (NumberFormatException ex) {
-        JOptionPane.showMessageDialog(this, "Credit unit must be a whole number.",
-            "Invalid Input", JOptionPane.WARNING_MESSAGE);
-        return;
-    }
-
-    Student student = findStudentById(studentId);
-    if (student == null) {
-        JOptionPane.showMessageDialog(this, "No student found with ID: " + studentId,
-            "Student Not Found", JOptionPane.ERROR_MESSAGE);
-        return;
-    }
-
-    boolean updated = student.editCourse(courseCode, newTitle, newCreditUnit, newGrade);
-    if (!updated) {
-        JOptionPane.showMessageDialog(this,
-            courseCode + " is not registered for this student.",
-            "Course Not Found", JOptionPane.ERROR_MESSAGE);
-        return;
-    }
-
-    JOptionPane.showMessageDialog(this,
-        courseCode + " updated for " + student.getName() + ".",
-        "Success", JOptionPane.INFORMATION_MESSAGE);
-}
 }

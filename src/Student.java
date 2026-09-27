@@ -93,6 +93,13 @@ public class Student extends Person {
         }
     }
 
+        // Lets JComboBox<Student> and any debug output show something readable,
+    // instead of Java's default "Student@1a2b3c4d" object reference.
+    @Override
+    public String toString() {
+        return getName() + " (" + getStudentId() + ") - " + getDepartment();
+    }
+
     // Returns true if a matching course was found and updated, false otherwise —
     // same "null/false means not found, not an error" reasoning as findStudentById.
     public boolean editCourse(String courseCode, String newTitle, int newCreditUnit, String newGrade) {
